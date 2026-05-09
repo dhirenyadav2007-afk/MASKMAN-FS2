@@ -32,12 +32,12 @@ from datetime import datetime
 #  CONFIG
 # ══════════════════════════════════════════════════════════
 
-BOT_TOKEN      = os.getenv("BOT_TOKEN", "8680674264:AAGtHb-TlMMfr4i_NT7IslxO-dKKx6Hu0n0")
+BOT_TOKEN      = os.getenv("BOT_TOKEN", "8065984603:AAGq1wNNrGYe8qaDJ57asp7_eAdpT1uy_VU")
 OWNER_ID       = int(os.getenv("OWNER_ID", "8147851167"))
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "-1003639742558"))
 MONGO_URI      = os.getenv("MONGO_URI", "mongodb+srv://LordShadow:LordShadow@cluster0.hby3kq2.mongodb.net/?appName=Cluster0")
-DB_NAME        = os.getenv("DB_NAME", "ANI_OTAKU")
-BOT_USERNAME   = os.getenv("BOT_USERNAME", "Mask_File_bot")
+DB_NAME        = os.getenv("DB_NAME", "Maskman")
+BOT_USERNAME   = os.getenv("BOT_USERNAME", "Mask_File2_bot")
 
 # max concurrent sends during broadcast
 BROADCAST_CONCURRENCY = 25
