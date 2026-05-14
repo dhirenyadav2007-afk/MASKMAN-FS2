@@ -299,8 +299,7 @@ async def _send_fsub_wall(message, user) -> None:
         "» ʏᴏᴜʀ ᴄᴏɴᴛᴇɴᴛ ɪs ʀᴇᴀᴅʏ ‼\n"
         "» ᴊᴏɪɴ ᴀʟʟ ᴄʜᴀɴɴᴇʟs ʙᴇʟᴏᴡ ᴛᴏ ᴜɴʟᴏᴄᴋ ᴀᴄᴄᴇss.\n\n"
         "» ɴᴏᴛᴇ : [ᴊʀ] ᴄʜᴀɴɴᴇʟs ʀᴇǫᴜɪʀᴇ ᴀᴅᴍɪɴ ᴀᴘᴘʀᴏᴠᴀʟ.\n"
-        "» ᴀғᴛᴇʀ ᴊᴏɪɴɪɴɢ, ᴛᴀᴘ ᴄʜᴇᴄᴋ ᴊᴏɪɴ.</b></blockquote>\n\n"
-        "<blockquote><b>» ᴘᴏᴡᴇʀᴇᴅ ʙʏ : @BotifyX_Pro_Botz</b></blockquote>"
+        "» ᴀғᴛᴇʀ ᴊᴏɪɴɪɴɢ, ᴛᴀᴘ ᴄʜᴇᴄᴋ ᴊᴏɪɴ.</b></blockquote>"
     )
     await message.reply_text(
         text,
@@ -316,7 +315,7 @@ def start_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("» ᴀʙᴏᴜᴛ",   callback_data="about"),
-            InlineKeyboardButton("» ɴᴇᴛᴡᴏʀᴋ", url="https://t.me/BotifyX_Pro_Botz"),
+            InlineKeyboardButton("» ɴᴇᴛᴡᴏʀᴋ", url="https://t.me/Shiva_Analyst07"),
         ],
         [InlineKeyboardButton("» ᴄʟᴏsᴇ", callback_data="close_msg")],
     ])
@@ -845,7 +844,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"<b>» ᴄᴏɴғɪɢ</b>\n"
         f"{fc_line}"
         "<b>» ᴄʀᴇᴅɪᴛs</b>\n"
-        "» ᴅᴇᴠᴇʟᴏᴘᴇᴅ ʙʏ @Akuma_Rei_Kami\n"
+        "» ᴅᴇᴠᴇʟᴏᴘᴇᴅ ʙʏ \n"
         "» ʟɪʙ  : python-telegram-bot v22\n"
         "» ᴅʙ   : MongoDB  |  ʜᴏsᴛ : Render"
         "</blockquote>"
@@ -855,11 +854,11 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         text,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("» sᴜᴘᴘᴏʀᴛ",    url="https://t.me/+ij3pcPOXv2U4MDll"),
-                InlineKeyboardButton("» ᴄʜᴀɴɴᴇʟ",    url="https://t.me/BotifyX_Pro_Botz"),
+                InlineKeyboardButton("» sᴜᴘᴘᴏʀᴛ",    url="https://t.me/Shiva_Analyst07"),
+                InlineKeyboardButton("» ᴄʜᴀɴɴᴇʟ",    url="https://t.me/Shiva_Analyst07"),
             ],
             [
-                InlineKeyboardButton("» ᴅᴇᴠᴇʟᴏᴘᴇʀ",  url="https://t.me/Akuma_Rei_Kami"),
+                InlineKeyboardButton("» ᴅᴇᴠᴇʟᴏᴘᴇʀ",  url="https://t.me/"),
                 InlineKeyboardButton("» ᴄʟᴏsᴇ",      callback_data="close_msg"),
             ],
         ]),
@@ -1427,11 +1426,11 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             "<b>» ʙᴏᴛ ɪɴғᴏʀᴍᴀᴛɪᴏɴ</b>\n\n"
             "<blockquote expandable>"
             "» ɴᴀᴍᴇ       : <a href='https://t.me/Mask_File_bot'>I'ᴍ ᴄᴜᴛɪᴇ</a>\n"
-            "» ᴅᴇᴠᴇʟᴏᴘᴇʀ  : @Akuma_Rei_Kami\n"
+            "» ᴅᴇᴠᴇʟᴏᴘᴇʀ  : @Shiva_Analyst07\n"
             "» ʟɪʙʀᴀʀʏ   : <a href='https://docs.python-telegram-bot.org/'>PTB v22</a>\n"
             "» ʟᴀɴɢᴜᴀɢᴇ  : <a href='https://www.python.org/'>Python 3</a>\n"
             "» ᴅᴀᴛᴀʙᴀsᴇ  : <a href='https://www.mongodb.com/'>MongoDB</a>\n"
-            "» ʜᴏsᴛɪɴɢ   : <a href='https://t.me/ITsANIMEN'>VPS</a>"
+            "» ʜᴏsᴛɪɴɢ   : <a href='https://t.me/'>VPS</a>"
             "</blockquote>",
             reply_markup=about_keyboard(),
             parse_mode=constants.ParseMode.HTML,
@@ -1445,7 +1444,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             "<blockquote>» ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴛʜᴇ ᴀᴅᴠᴀɴᴄᴇᴅ ʟɪɴᴋs &amp; ғɪʟᴇ sʜᴀʀɪɴɢ ʙᴏᴛ.\n"
             "» sʜᴀʀᴇ ʟɪɴᴋs ᴀɴᴅ ғɪʟᴇs ᴡʜɪʟᴇ ᴋᴇᴇᴘɪɴɢ ʏᴏᴜʀ ᴄʜᴀɴɴᴇʟs sᴀғᴇ.</blockquote>\n\n"
             "<blockquote>» ᴍᴀɪɴᴛᴀɪɴᴇᴅ ʙʏ : "
-            "<a href='https://t.me/Akuma_Rei_Kami'>ᴀᴋᴜᴍᴀ_ʀᴇɪ</a></blockquote>",
+            "<a href='https://t.me/Shiva_Analyst07'>Shiva_Analyst</a></blockquote>",
             reply_markup=start_keyboard(),
             parse_mode=constants.ParseMode.HTML,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
@@ -1503,8 +1502,8 @@ async def post_init(application: Application) -> None:
                 "</blockquote>"
             ),
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("» sᴜᴘᴘᴏʀᴛ", url="https://t.me/+ij3pcPOXv2U4MDll"),
-                InlineKeyboardButton("» ᴄʜᴀɴɴᴇʟ",  url="https://t.me/BotifyX_Pro_Botz"),
+                InlineKeyboardButton("» sᴜᴘᴘᴏʀᴛ", url="https://t.me/Shiva_Analyst07"),
+                InlineKeyboardButton("» ᴄʜᴀɴɴᴇʟ",  url="https://t.me/Shiva_Analyst07"),
             ]]),
             parse_mode=constants.ParseMode.HTML,
         )
