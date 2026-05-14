@@ -14,6 +14,7 @@ from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    LinkPreviewOptions,
 )
 from telegram.ext import (
     Application,
@@ -32,12 +33,13 @@ from datetime import datetime
 #  CONFIG
 # ══════════════════════════════════════════════════════════
 
-BOT_TOKEN      = os.getenv("BOT_TOKEN", "8065984603:AAGq1wNNrGYe8qaDJ57asp7_eAdpT1uy_VU")
-OWNER_ID       = int(os.getenv("OWNER_ID", "8147851167"))
+BOT_TOKEN      = os.getenv("BOT_TOKEN",      "8065984603:AAGq1wNNrGYe8qaDJ57asp7_eAdpT1uy_VU")
+OWNER_ID       = int(os.getenv("OWNER_ID",   "8147851167"))
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "-1003639742558"))
-MONGO_URI      = os.getenv("MONGO_URI", "mongodb+srv://LordShadow:LordShadow@cluster0.hby3kq2.mongodb.net/?appName=Cluster0")
-DB_NAME        = os.getenv("DB_NAME", "Maskman")
-BOT_USERNAME   = os.getenv("BOT_USERNAME", "Mask_File2_bot")
+FILE_CHANNEL   = int(os.getenv("FILE_CHANNEL",   "-1002298993427"))          # ← set to your channel id
+MONGO_URI      = os.getenv("MONGO_URI",      "mongodb+srv://LordShadow:LordShadow@cluster0.hby3kq2.mongodb.net/?appName=Cluster0")
+DB_NAME        = os.getenv("DB_NAME",        "Maskman")
+BOT_USERNAME   = os.getenv("BOT_USERNAME",   "Mask_File2_bot")
 
 # max concurrent sends during broadcast
 BROADCAST_CONCURRENCY = 25
@@ -96,26 +98,14 @@ def run_flask():
 
 # ══════════════════════════════════════════════════════════
 #  KEY ENCODING HELPERS
-#
-#  All shareable links use base64url-encoded keys so the
-#  actual DB key is never exposed in the URL.
-#
-#  encode_key("BATCH_abc123")  →  "QkFUQ0hfYWJjMTIz"
-#  decode_key("QkFUQ0hfYWJjMTIz") →  "BATCH_abc123"
 # ══════════════════════════════════════════════════════════
 
 def encode_key(raw: str) -> str:
-    """Encode a raw DB key to a URL-safe base64 string (no padding)."""
     return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
 
 
 def decode_key(encoded: str) -> str | None:
-    """
-    Decode a base64url key back to the raw DB key.
-    Returns None if decoding fails (e.g. legacy / tampered token).
-    """
     try:
-        # restore stripped padding
         padded = encoded + "=" * (4 - len(encoded) % 4)
         return base64.urlsafe_b64decode(padded).decode()
     except Exception:
@@ -137,6 +127,10 @@ def get_auto_delete_seconds() -> int | None:
 
 # ══════════════════════════════════════════════════════════
 #  TELEGRAM ACTIVITY LOGGER
+#
+#  FIX: PTB v20+ deprecated disable_web_page_preview.
+#       Using LinkPreviewOptions now — this was the reason
+#       logs were silently failing to send.
 # ══════════════════════════════════════════════════════════
 
 async def tg_log(
@@ -174,10 +168,45 @@ async def tg_log(
             chat_id=LOG_CHANNEL_ID,
             text=text,
             parse_mode=constants.ParseMode.HTML,
-            disable_web_page_preview=True,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),  # ← fixed
         )
     except Exception as exc:
         logger.error(f"tg_log failed → {exc}")
+
+# ══════════════════════════════════════════════════════════
+#  FILE CHANNEL HELPER
+#
+#  Copies one or more messages to FILE_CHANNEL.
+#  Called after genlink / batch link generation.
+#  No-ops silently when FILE_CHANNEL == 0.
+# ══════════════════════════════════════════════════════════
+
+async def copy_to_file_channel(bot, from_chat_id: int, message_ids: list) -> None:
+    """Copy a list of message IDs from from_chat_id into FILE_CHANNEL."""
+    if not FILE_CHANNEL:
+        return
+
+    for mid in message_ids:
+        try:
+            await bot.copy_message(
+                chat_id=FILE_CHANNEL,
+                from_chat_id=from_chat_id,
+                message_id=mid,
+            )
+            await asyncio.sleep(0.05)          # stay under rate limits
+        except RetryAfter as exc:
+            logger.warning(f"file-channel RetryAfter {exc.retry_after}s mid={mid}")
+            await asyncio.sleep(exc.retry_after)
+            try:                               # one retry after the wait
+                await bot.copy_message(
+                    chat_id=FILE_CHANNEL,
+                    from_chat_id=from_chat_id,
+                    message_id=mid,
+                )
+            except TelegramError as exc2:
+                logger.error(f"file-channel retry failed mid={mid}: {exc2}")
+        except TelegramError as exc:
+            logger.error(f"file-channel copy failed mid={mid}: {exc}")
 
 # ══════════════════════════════════════════════════════════
 #  AUTO-DELETE JOBS
@@ -302,9 +331,6 @@ def about_keyboard() -> InlineKeyboardMarkup:
 
 # ══════════════════════════════════════════════════════════
 #  /start
-#
-#  Keys arriving in deep-links are base64url-encoded.
-#  We decode them first to recover the real DB key.
 # ══════════════════════════════════════════════════════════
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -319,20 +345,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     encoded_key = context.args[0] if context.args else None
 
-    # ── decode the key ──────────────────────────────────────
-    # All new links are base64url-encoded; decode to get the real DB key.
     key = None
     if encoded_key:
         key = decode_key(encoded_key)
         if key is None:
-            # Fallback: treat it as a raw key (legacy links / manual test)
             logger.warning(f"could not decode key '{encoded_key}', trying as raw")
             key = encoded_key
 
     # ── force-sub gate ──────────────────────────────────────
     if is_force_sub_enabled() and not await is_user_joined(context.bot, uid):
         if encoded_key:
-            # store the encoded key so we can resume after fsub passes
             fsub_pending_col.update_one(
                 {"_id": uid}, {"$set": {"key": encoded_key}}, upsert=True
             )
@@ -365,7 +387,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     chat_id=chat_id,
                     from_chat_id=batch["chat_id"],
                     message_id=mid,
-                    protect_content=True,          # ← content protection
+                    protect_content=True,
                 )
                 sent_ids.append(m.message_id)
                 consecutive_fails = 0
@@ -414,7 +436,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     chat_id=chat_id,
                     from_chat_id=doc["chat_id"],
                     message_id=doc["message_id"],
-                    protect_content=True,          # ← content protection
+                    protect_content=True,
                 )
                 d = get_auto_delete_seconds()
                 if d:
@@ -444,7 +466,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "<a href='https://t.me/Real_Mask_Man'>Mask Man ™</a></blockquote>",
         reply_markup=start_keyboard(),
         parse_mode=constants.ParseMode.HTML,
-        disable_web_page_preview=True,
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
 
 # ══════════════════════════════════════════════════════════
@@ -761,7 +783,7 @@ async def fsub_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             "<blockquote>" + "\n".join(lines) + "</blockquote>",
             parse_mode=constants.ParseMode.HTML,
-            disable_web_page_preview=True,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
         return
 
@@ -785,6 +807,12 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     logger.info(f"uid={update.effective_user.id} used /help")
+
+    fc_line = (
+        f"» FILE_CHANNEL : <code>{FILE_CHANNEL}</code> (ᴀᴄᴛɪᴠᴇ)\n"
+        if FILE_CHANNEL
+        else "» FILE_CHANNEL : ɴᴏᴛ sᴇᴛ\n"
+    )
 
     text = (
         "<b>» ʙᴏᴛ ᴄᴏᴍᴍᴀɴᴅs</b>\n\n"
@@ -810,9 +838,12 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "» ᴄᴏɴᴛᴇɴᴛ ᴘʀᴏᴛᴇᴄᴛɪᴏɴ [ɴᴏ ғᴏʀᴡᴀʀᴅɪɴɢ]\n"
         "» ᴇɴᴄᴏᴅᴇᴅ ᴅᴇᴇᴘ-ʟɪɴᴋs [ʙᴀsᴇ64ᴜʀʟ]\n"
         "» ғᴜʟʟ ᴛᴇʟᴇɢʀᴀᴍ ᴀᴄᴛɪᴠɪᴛʏ ʟᴏɢɢɪɴɢ\n"
-        "» ʜɪɢʜ-ᴘᴇʀғᴏʀᴍᴀɴᴄᴇ ʙʀᴏᴀᴅᴄᴀsᴛ [25 ᴄᴏɴᴄᴜʀʀᴇɴᴛ ᴡᴏʀᴋᴇʀs]"
+        "» ʜɪɢʜ-ᴘᴇʀғᴏʀᴍᴀɴᴄᴇ ʙʀᴏᴀᴅᴄᴀsᴛ [25 ᴄᴏɴᴄᴜʀʀᴇɴᴛ ᴡᴏʀᴋᴇʀs]\n"
+        f"» ғɪʟᴇ ᴄʜᴀɴɴᴇʟ ʙᴀᴄᴋᴜᴘ [ɢᴇɴʟɪɴᴋ &amp; ʙᴀᴛᴄʜ]"
         "</blockquote>\n"
         "<blockquote expandable>"
+        f"<b>» ᴄᴏɴғɪɢ</b>\n"
+        f"{fc_line}"
         "<b>» ᴄʀᴇᴅɪᴛs</b>\n"
         "» ᴅᴇᴠᴇʟᴏᴘᴇᴅ ʙʏ @Akuma_Rei_Kami\n"
         "» ʟɪʙ  : python-telegram-bot v22\n"
@@ -833,7 +864,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             ],
         ]),
         parse_mode=constants.ParseMode.HTML,
-        disable_web_page_preview=True,
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
 
 # ══════════════════════════════════════════════════════════
@@ -932,8 +963,37 @@ async def private_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # ── GENLINK ───────────────────────────────────────────
     if uid in GENLINK_WAIT:
         GENLINK_WAIT.remove(uid)
+
         raw_key = uuid.uuid4().hex[:12]
-        links_col.insert_one({"_id": raw_key, "chat_id": msg.chat.id, "message_id": msg.message_id})
+        links_col.insert_one({
+            "_id":        raw_key,
+            "chat_id":    msg.chat.id,
+            "message_id": msg.message_id,
+        })
+
+        # ── copy to FILE_CHANNEL ──────────────────────────
+        # The source of the file for genlink is always the
+        # message the owner just sent/forwarded in this chat.
+        if FILE_CHANNEL:
+            try:
+                await context.bot.copy_message(
+                    chat_id=FILE_CHANNEL,
+                    from_chat_id=msg.chat.id,
+                    message_id=msg.message_id,
+                )
+                logger.info(f"genlink key={raw_key} copied to FILE_CHANNEL={FILE_CHANNEL}")
+                await tg_log(
+                    context.bot, "INFO",
+                    f"ғɪʟᴇ ᴄʜᴀɴɴᴇʟ ʙᴀᴄᴋᴜᴘ ✓ | key={raw_key}",
+                    update.effective_user,
+                )
+            except TelegramError as exc:
+                logger.error(f"genlink file-channel copy failed key={raw_key}: {exc}")
+                await tg_log(
+                    context.bot, "ERROR",
+                    f"ғɪʟᴇ ᴄʜᴀɴɴᴇʟ ʙᴀᴄᴋᴜᴘ ✗ | key={raw_key}",
+                    error=str(exc),
+                )
 
         # encode the raw key → URL-safe base64 for the deep-link
         encoded = encode_key(raw_key)
@@ -947,7 +1007,7 @@ async def private_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 InlineKeyboardButton("» sʜᴀʀᴇ", url=f"https://t.me/share/url?url={link}")
             ]]),
             parse_mode=constants.ParseMode.HTML,
-            disable_web_page_preview=True,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
         return
 
@@ -957,7 +1017,7 @@ async def private_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         # ── step 1 : receive FIRST message ────────────────
         if data["step"] == "first":
-            source_chat_id   = None
+            source_chat_id    = None
             source_message_id = None
 
             if msg.forward_origin and hasattr(msg.forward_origin, "chat"):
@@ -1087,8 +1147,73 @@ async def private_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     InlineKeyboardButton("» sʜᴀʀᴇ", url=f"https://t.me/share/url?url={link}")
                 ]]),
                 parse_mode=constants.ParseMode.HTML,
-                disable_web_page_preview=True,
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
+
+            # ── copy batch range to FILE_CHANNEL ─────────
+            # Runs after the link reply so the owner isn't
+            # kept waiting.  Errors are logged but do not
+            # surface to the user.
+            if FILE_CHANNEL:
+                progress_msg = await msg.reply_text(
+                    f"<blockquote>» ᴄᴏᴘʏɪɴɢ <b>{count}</b> ᴍsɢs ᴛᴏ ғɪʟᴇ ᴄʜᴀɴɴᴇʟ…</blockquote>",
+                    parse_mode=constants.ParseMode.HTML,
+                )
+
+                source_chat  = data["chat_id"]
+                message_ids  = list(range(data["from_id"], to_id + 1))
+                copied = 0
+                failed = 0
+
+                for mid in message_ids:
+                    try:
+                        await context.bot.copy_message(
+                            chat_id=FILE_CHANNEL,
+                            from_chat_id=source_chat,
+                            message_id=mid,
+                        )
+                        copied += 1
+                        await asyncio.sleep(0.05)
+                    except RetryAfter as exc:
+                        logger.warning(f"batch FC RetryAfter {exc.retry_after}s mid={mid}")
+                        await asyncio.sleep(exc.retry_after)
+                        try:
+                            await context.bot.copy_message(
+                                chat_id=FILE_CHANNEL,
+                                from_chat_id=source_chat,
+                                message_id=mid,
+                            )
+                            copied += 1
+                        except TelegramError as exc2:
+                            logger.error(f"batch FC retry failed mid={mid}: {exc2}")
+                            failed += 1
+                    except TelegramError as exc:
+                        logger.error(f"batch FC copy failed mid={mid}: {exc}")
+                        failed += 1
+
+                try:
+                    await progress_msg.delete()
+                except:
+                    pass
+
+                summary = (
+                    f"<blockquote>» ғɪʟᴇ ᴄʜᴀɴɴᴇʟ ʙᴀᴄᴋᴜᴘ ᴄᴏᴍᴘʟᴇᴛᴇ\n"
+                    f"» ᴄᴏᴘɪᴇᴅ : <b>{copied}</b> / {count}"
+                    + (f"\n» ғᴀɪʟᴇᴅ : <b>{failed}</b>" if failed else "")
+                    + "</blockquote>"
+                )
+                await msg.reply_text(summary, parse_mode=constants.ParseMode.HTML)
+
+                logger.info(
+                    f"batch FC backup done key={raw_batch_key} "
+                    f"copied={copied} failed={failed}"
+                )
+                await tg_log(
+                    context.bot, "INFO",
+                    f"ʙᴀᴛᴄʜ ғɪʟᴇ ᴄʜᴀɴɴᴇʟ ʙᴀᴄᴋᴜᴘ | key={raw_batch_key} "
+                    f"ᴄᴏᴘɪᴇᴅ={copied} ғᴀɪʟᴇᴅ={failed}",
+                    update.effective_user,
+                )
             return
 
     # ── BAN ───────────────────────────────────────────────
@@ -1160,7 +1285,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         pending = fsub_pending_col.find_one({"_id": uid})
         if pending:
-            encoded_key   = pending["key"]          # stored as encoded
+            encoded_key   = pending["key"]
             fsub_pending_col.delete_one({"_id": uid})
             context.args  = [encoded_key]
             await start(Update(update.update_id, message=query.message), context)
@@ -1310,7 +1435,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             "</blockquote>",
             reply_markup=about_keyboard(),
             parse_mode=constants.ParseMode.HTML,
-            disable_web_page_preview=True,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
         return
 
@@ -1323,7 +1448,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             "<a href='https://t.me/Akuma_Rei_Kami'>ᴀᴋᴜᴍᴀ_ʀᴇɪ</a></blockquote>",
             reply_markup=start_keyboard(),
             parse_mode=constants.ParseMode.HTML,
-            disable_web_page_preview=True,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
         return
 
@@ -1362,6 +1487,8 @@ async def post_init(application: Application) -> None:
 
     await tg_log(application.bot, "SYSTEM", "ʙᴏᴛ sᴛᴀʀᴛᴇᴅ ✓")
 
+    fc_status = f"ᴀᴄᴛɪᴠᴇ (<code>{FILE_CHANNEL}</code>)" if FILE_CHANNEL else "ɴᴏᴛ sᴇᴛ"
+
     try:
         total = users_col.count_documents({})
         await application.bot.send_message(
@@ -1371,6 +1498,7 @@ async def post_init(application: Application) -> None:
                 "<blockquote>"
                 "» ɴᴇᴡ ᴅᴇᴘʟᴏʏᴍᴇɴᴛ ᴅᴇᴛᴇᴄᴛᴇᴅ\n"
                 f"» ᴛᴏᴛᴀʟ ᴜsᴇʀs ɪɴ ᴅʙ : <code>{total}</code>\n"
+                f"» ғɪʟᴇ ᴄʜᴀɴɴᴇʟ      : {fc_status}\n"
                 f"» ᴛɪᴍᴇ : <code>{datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</code>"
                 "</blockquote>"
             ),
